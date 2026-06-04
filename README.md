@@ -1,6 +1,6 @@
 # Near-Field Antenna Measurement & ML-Based Anomaly Detection
 
-> **Automated anomaly detection, phase drift calibration, and correction for near-field antenna radiation pattern measurements using a PyTorch 1D Convolutional Autoencoder + LightGBM gradient-boosted regressor, paired with MATLAB Near-Field to Far-Field (NF-FF) transformation scripts.**
+> **Automated anomaly detection, phase drift calibration, and correction for near-field antenna radiation pattern measurements using a PyTorch 1D Convolutional Autoencoder + LightGBM gradient-boosted regressor, paired with MATLAB Near-Field to Far-Field (NF-FF) transformation scripts — all wrapped in an interactive Streamlit dashboard.**
 
 ---
 
@@ -12,18 +12,26 @@
 - [Project Structure](#project-structure)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [GUI Dashboard](#gui-dashboard)
+  - [Launching the Dashboard](#launching-the-dashboard)
+  - [Dashboard Features](#dashboard-features)
+  - [Sidebar Controls](#sidebar-controls)
+  - [Visualisation Tabs](#visualisation-tabs)
 - [Usage](#usage)
+  - [Python: End-to-End Pipeline (CLI)](#python-end-to-end-pipeline-cli)
   - [Python: Anomaly Detection Pipeline](#python-anomaly-detection-pipeline)
   - [Python: LightGBM Phase Drift Calibration](#python-lightgbm-phase-drift-calibration)
   - [Python: NF-FF Transformation (Planar & Circular)](#python-nf-ff-transformation-planar--circular)
   - [MATLAB: NF-FF Transformation (Planar)](#matlab-nf-ff-transformation-planar)
   - [MATLAB: NF-FF Transformation (Circular)](#matlab-nf-ff-transformation-circular)
 - [How It Works](#how-it-works)
-  - [1. Hybrid Training Approach](#1-hybrid-training-approach)
-  - [2. Autoencoder Architecture](#2-autoencoder-architecture)
-  - [3. Adaptive Anomaly Detection](#3-adaptive-anomaly-detection)
-  - [4. Smart Interpolation](#4-smart-interpolation)
-  - [5. LightGBM Phase Drift Calibration](#5-lightgbm-phase-drift-calibration)
+  - [1. Data Ingestion](#1-data-ingestion)
+  - [2. Hybrid Training Approach](#2-hybrid-training-approach)
+  - [3. Autoencoder Architecture](#3-autoencoder-architecture)
+  - [4. Adaptive Anomaly Detection](#4-adaptive-anomaly-detection)
+  - [5. Smart Interpolation](#5-smart-interpolation)
+  - [6. LightGBM Phase Drift Calibration](#6-lightgbm-phase-drift-calibration)
+  - [7. Pipeline Orchestration](#7-pipeline-orchestration)
 - [Results](#results)
 - [Data Format](#data-format)
 - [Configuration & CLI Options](#configuration--cli-options)
@@ -44,6 +52,12 @@ This project provides a complete pipeline for **near-field antenna measurement p
 2. **Phase Drift Calibration** — A LightGBM gradient-boosted regressor that predicts and corrects thermal phase drift caused by VNA/cable temperature fluctuations during long chamber scans.
 
 3. **Electromagnetic Theory** — Python and MATLAB scripts that perform Near-Field to Far-Field (NF-FF) transformations using both **planar** (2D FFT / Plane-Wave Spectrum) and **circular** (Cylindrical Mode Expansion) methods, with evanescent mode filtering and Spatial Nyquist safeguards.
+
+4. **Interactive GUI Dashboard** — A Streamlit-based lab benchtop interface (`app.py`) with interactive Plotly visualisations including 3D radiation pattern surfaces, U-V heatmaps, polar plots, cylindrical-mode spectra, and real-time pipeline progress tracking.
+
+5. **Unified Pipeline Orchestrator** — A backend integration layer (`main.py`) that chains all processing stages (ingestion → anomaly detection → phase calibration → NF-FF transform) into a single callable pipeline with strict shape validation and progress callbacks.
+
+6. **Smart Data Ingestion** — An auto-detecting parser (`ingestion.py`) that handles CST planar exports, simple VNA CSVs, and extended measurement CSVs with temperature/time metadata — all normalised into a standardised format.
 
 The ML pipeline replaces the brittle manual `sort → unique → interpolate` approach with an intelligent system that learns the physics of smooth radiation patterns and flags only the corrupted data points.
 
@@ -86,6 +100,12 @@ The autoencoder learns what a *clean* radiation pattern looks like from real CST
                     └──────────┬──────────────────┘
                                │
                     ┌──────────▼──────────────────┐
+                    │   Data Ingestion (auto-      │
+                    │   detect format: CST / CSV   │
+                    │   / Extended VNA)             │
+                    └──────────┬──────────────────┘
+                               │
+                    ┌──────────▼──────────────────┐
                     │   Data Augmentation          │
                     │   • Gaussian noise           │
                     │   • Amplitude scaling        │
@@ -114,8 +134,20 @@ The autoencoder learns what a *clean* radiation pattern looks like from real CST
                     └──────────┬──────────────────┘
                                │
                     ┌──────────▼──────────────────┐
-                    │   cleaned_sweep.csv          │
-                    │   → Feed into MATLAB NF-FF   │
+                    │   LightGBM Phase Drift       │
+                    │   Calibration                │
+                    └──────────┬──────────────────┘
+                               │
+                    ┌──────────▼──────────────────┐
+                    │   NF-FF Transformation       │
+                    │   Planar (PWS) or Circular   │
+                    │   (CME + Hankel)             │
+                    └──────────┬──────────────────┘
+                               │
+                    ┌──────────▼──────────────────┐
+                    │   Streamlit Dashboard        │
+                    │   Interactive Plotly plots   │
+                    │   3D surfaces, polar, UV     │
                     └─────────────────────────────┘
 ```
 
@@ -124,16 +156,22 @@ The autoencoder learns what a *clean* radiation pattern looks like from real CST
 ## Project Structure
 
 ```
-jai/
+NF-FF-TRANSFORM-ALGORITHM-main/
+├── app.py                      ← Streamlit GUI dashboard
+├── main.py                     ← Pipeline orchestrator (backend)
+├── requirements.txt            ← Python package dependencies
+├── README.md
 ├── src/
 │   ├── python/
-│   │   ├── nf_autoencoder.py
-│   │   ├── nf_calibration.py
-│   │   ├── nf_ff_planar.py
-│   │   └── nf_ff_circular.py
+│   │   ├── ingestion.py        ← Auto-detecting VNA/CST data parser
+│   │   ├── nf_autoencoder.py   ← PyTorch anomaly detection pipeline
+│   │   ├── nf_calibration.py   ← LightGBM phase drift calibration
+│   │   ├── nf_ff_planar.py     ← Planar NF-FF (2D FFT / PWS)
+│   │   └── nf_ff_circular.py   ← Circular NF-FF (CME + Hankel)
 │   └── matlab/
-│       ├── planar_nfff_legacy.m    (renamed from planar_nfff_legacy.m)
-│       └── circular_nfff_legacy.m  (renamed from circular_nfff_legacy.m)
+│       ├── planar_nfff_legacy.m
+│       ├── circular_nfff_legacy.m
+│       └── untitled3.m         ← Additional MATLAB analysis script
 ├── data/
 │   ├── raw/
 │   │   └── Simulated_NF_Data.txt
@@ -146,26 +184,23 @@ jai/
 ├── docs/
 │   ├── Instead of manually sorting arrays.txt
 │   └── A System Architecture Breakdown of a DSP-Based Modern Wireline Transceiver.docx
-├── results/
-│   ├── nf_anomaly_results.png
-│   └── calibration_diagnostic.png
-├── simulation/
-│   ├── antenna_Jai_kaushik.cst
-│   └── antenna_Jai_kaushik/ (folder)
-├── README.md
-├── requirements.txt
-└── .gitignore
+└── results/
+    ├── nf_anomaly_results.png
+    └── calibration_diagnostic.png
 ```
 
 ### File Descriptions
 
 | File | Language | Description |
 |------|----------|-------------|
+| `app.py` | Python | **Streamlit GUI dashboard** — interactive lab benchtop interface with Plotly 3D radiation surfaces, U-V heatmaps, polar plots, anomaly diagnostics, per-point error charts, pipeline progress tracking, metric cards, and stage status badges. Launch with `streamlit run app.py`. |
+| `main.py` | Python | **Pipeline orchestrator** — chains all processing modules (ingestion → autoencoder → LightGBM → NF-FF transform) into a single `MetrologyPipeline` class with `PipelineConfig` dataclass, `PipelineStage` enum, strict inter-stage shape validation, and progress callbacks for the Streamlit front-end. |
+| `ingestion.py` | Python | **Data ingestion module** — auto-detects and parses three input formats: CST planar exports (whitespace-separated, 9 columns), simple VNA CSVs (`angle_deg, mag_dB, phase_deg`), and extended CSVs with temperature/time metadata. Outputs a standardised `IngestedData` dataclass. |
 | `nf_autoencoder.py` | Python | End-to-end pipeline: loads CST data, augments, trains autoencoder, detects anomalies with adaptive threshold, smart-interpolates corrupted points, saves cleaned output and diagnostic plots |
 | `nf_calibration.py` | Python | LightGBM phase drift calibration: synthetic drift data generation, 5-fold cross-validated training, inference on raw sweep files, 2-panel diagnostic plotting |
 | `nf_ff_planar.py` | Python | Planar NF-FF transformation using 2D FFT and Plane-Wave Spectrum method, replacing `planar_nfff_legacy.m`. Generates U-V space far-field plots. |
 | `nf_ff_circular.py` | Python | 1D circular NF-FF transformation with Cylindrical Mode Expansion, evanescent mode filtering, and Spatial Nyquist check, replacing `circular_nfff_legacy.m`. |
-| `requirements.txt` | — | Python package dependencies (PyTorch, NumPy, Pandas, Matplotlib, LightGBM, scikit-learn) |
+| `requirements.txt` | — | Python package dependencies (PyTorch, NumPy, Pandas, Matplotlib, LightGBM, scikit-learn, SciPy, Streamlit, Plotly) |
 | `nf_autoencoder.pth` | Binary | Saved PyTorch model state dictionary (trained weights) |
 | `lightgbm_calibration_model.txt` | Text | Saved LightGBM booster model for phase drift prediction |
 | `cleaned_sweep.csv` | CSV | Anomaly-corrected output: `angle_deg`, `mag_dB`, `phase_deg` — ready for MATLAB |
@@ -173,9 +208,9 @@ jai/
 | `nf_anomaly_results.png` | Image | Four-panel diagnostic: training loss, anomaly flags, reconstruction error, before/after |
 | `calibration_diagnostic.png` | Image | Two-panel diagnostic: thermal drift landscape, phase before/after calibration |
 | `Simulated_NF_Data.txt` | Data | CST planar near-field export at 10 GHz — 11x9 spatial grid (x, y, z, Ex, Ey, Ez complex components) |
-| `antenna_Jai_kaushik.cst` | Binary | CST Microwave Studio antenna simulation project |
 | `planar_nfff_legacy.m` | MATLAB | Planar NF-FF transformation using 2D FFT and Plane-Wave Spectrum method |
 | `circular_nfff_legacy.m` | MATLAB | 1D circular NF-FF transformation with Cylindrical Mode Expansion, evanescent mode filtering, Spatial Nyquist check, and proper FFT scaling |
+| `untitled3.m` | MATLAB | Additional MATLAB analysis / prototyping script |
 
 ---
 
@@ -188,9 +223,11 @@ jai/
 | **LightGBM** | >= 4.0.0 | Phase drift calibration |
 | **scikit-learn** | >= 1.3.0 | Cross-validation & metrics |
 | **NumPy** | >= 1.24.0 | Numerical computation |
-| **Pandas** | >= 2.0.0 | CSV I/O |
-| **Matplotlib** | >= 3.7.0 | Diagnostic plots |
+| **Pandas** | >= 2.0.0 | CSV I/O & data manipulation |
+| **Matplotlib** | >= 3.7.0 | Diagnostic plots (CLI mode) |
 | **SciPy** | >= 1.11.0 | Hankel functions for circular NF-FF |
+| **Streamlit** | >= 1.30.0 | Interactive GUI dashboard |
+| **Plotly** | >= 5.18.0 | Interactive 3D/2D visualisations in dashboard |
 | **MATLAB** | R2020a+ | Legacy NF-FF transformation scripts (optional) |
 
 ---
@@ -199,7 +236,7 @@ jai/
 
 ```bash
 # 1. Clone or navigate to the project
-cd jai/
+cd NF-FF-TRANSFORM-ALGORITHM-main/
 
 # 2. Install Python dependencies
 pip install -r requirements.txt
@@ -209,7 +246,121 @@ pip install -r requirements.txt
 
 ---
 
+## GUI Dashboard
+
+The project includes a full-featured **Streamlit-based lab benchtop interface** (`app.py`) that wraps the entire pipeline into an interactive web dashboard with real-time progress tracking and rich Plotly visualisations.
+
+### Launching the Dashboard
+
+```bash
+streamlit run app.py
+```
+
+This opens the dashboard in your default browser at `http://localhost:8501`.
+
+### Dashboard Features
+
+| Feature | Description |
+|---------|-------------|
+| **One-click pipeline** | The 🚀 **Run Full Pipeline** button executes all four stages (Ingestion → Anomaly Detection → Phase Calibration → NF-FF Transform) with a live progress bar |
+| **File upload** | Drag-and-drop VNA `.csv` or CST `.txt` files directly into the browser — auto-detected and parsed |
+| **Demo mode** | Checkbox to process the included `Simulated_NF_Data.txt` without needing external data |
+| **Metric cards** | At-a-glance KPIs: detected format, input point count, anomalies fixed, phase drift corrected, peak gain |
+| **Stage timing** | Per-stage execution time breakdown (ingestion, anomaly, calibration, transform) |
+| **Dark theme** | Premium dark UI with glassmorphism metric cards, gradient headers, Inter font, and indigo accent colours |
+
+### Sidebar Controls
+
+The sidebar provides full configuration without touching the command line:
+
+| Control | Default | Description |
+|---------|---------|-------------|
+| **Frequency (GHz)** | 10.0 | Operating frequency for wavelength calculation |
+| **Step Size (mm)** | 10.0 | Spatial sampling step for planar grids |
+| **Probe Radius (m)** | 0.5 | Measurement radius for circular CME transforms |
+| **FFT Size** | 256 | Zero-padded FFT size (64 / 128 / 256 / 512 / 1024) |
+
+### Visualisation Tabs
+
+The dashboard automatically selects the appropriate visualisation set based on the detected data geometry:
+
+#### Planar Data (CST 2D Grid)
+
+| Tab | Content |
+|-----|---------|
+| 🌐 **3D Surface** | Interactive 3D far-field radiation pattern with Plasma colourmap, evanescent-region masking, visible-region circle overlay, and orbit/zoom controls |
+| 🗺️ **U-V Heatmap** | 2D U-V direction-cosine heatmap with dashed visible-region boundary |
+| 📈 **Theta Cuts** | Principal-plane cuts at φ=0° and φ=90° with normalised amplitude |
+
+#### Circular Data (1D Angular Sweep)
+
+| Tab | Content |
+|-----|---------|
+| 🎯 **Polar Plot** | Interactive polar overlay of near-field and far-field patterns |
+| 📈 **Cartesian Overlay** | NF vs FF amplitude comparison on a Cartesian axis |
+| 🔬 **Mode Spectrum** | Cylindrical-mode spectrum before and after Hankel compensation, with propagating-mode region highlighted |
+
+#### Anomaly Diagnostics (Always Shown)
+
+| Panel | Content |
+|-------|---------|
+| **Left** | Before vs after repair — raw sweep (grey), autoencoder reconstruction (blue dashed), cleaned (green), anomaly markers (red ✕) |
+| **Right** | Per-point reconstruction error with filled area chart and adaptive threshold (μ+3σ) horizontal line |
+
+#### Detailed Stage Status
+
+An expandable section at the bottom shows pass/skip badges for each pipeline stage with execution times and a full JSON metrics dump.
+
+---
+
 ## Usage
+
+### Python: End-to-End Pipeline (CLI)
+
+The `main.py` orchestrator runs all four stages in sequence without the GUI:
+
+```bash
+python main.py
+```
+
+This will:
+1. Ingest the CST demo data (`data/raw/Simulated_NF_Data.txt`)
+2. Run autoencoder anomaly detection (loads pre-trained weights or trains from scratch)
+3. Run LightGBM phase drift calibration (synthetic demo if no temperature metadata)
+4. Compute the NF-FF transformation (planar PWS for 2D grids, circular CME for 1D sweeps)
+5. Print all pipeline metrics and per-stage execution times
+
+You can also import and use the pipeline programmatically:
+
+```python
+from main import MetrologyPipeline, PipelineConfig
+
+config = PipelineConfig(freq_ghz=10.0, n_fft=512)
+pipe = MetrologyPipeline(config)
+results = pipe.run_full_sweep("data/raw/Simulated_NF_Data.txt")
+
+print(results["metrics"])          # Dict of all KPIs
+print(results["stages_completed"]) # ['ingestion', 'anomaly', 'calibration', 'transform']
+print(results["timings"])          # Per-stage wall-clock times
+```
+
+#### PipelineConfig Options
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `freq_ghz` | 10.0 | Operating frequency |
+| `step_mm` | 10.0 | Spatial sampling step |
+| `n_fft` | 256 | FFT zero-padding size |
+| `n_sweep_points` | 360 | Number of angular points for 1D sweep resampling |
+| `r_probe_m` | 0.5 | Probe radius for circular CME |
+| `autoencoder_weights` | `models/nf_autoencoder.pth` | Path to saved PyTorch weights |
+| `calibration_model` | `models/lightgbm_calibration_model.txt` | Path to saved LightGBM model |
+| `cst_base_file` | `data/raw/Simulated_NF_Data.txt` | CST base file for autoencoder training |
+| `device` | `cpu` | PyTorch device (`cpu` or `cuda`) |
+| `autoencoder_epochs` | 500 | Training epochs if weights don't exist |
+| `autoencoder_batch` | 64 | Training batch size |
+
+---
 
 ### Python: Anomaly Detection Pipeline
 
@@ -354,7 +505,25 @@ Open `src/matlab/circular_nfff_legacy.m` in MATLAB. This script now reads the **
 
 ## How It Works
 
-### 1. Hybrid Training Approach
+### 1. Data Ingestion
+
+The `VNADataIngester` class (`src/python/ingestion.py`) automatically detects and parses three input formats:
+
+| Format | Detection Trigger | Columns | Output |
+|--------|------------------|---------|--------|
+| **CST Planar** | Header contains `ExRe` or `x [mm]` | 9 cols: x, y, z, ExRe, ExIm, EyRe, EyIm, EzRe, EzIm | 2D complex field grids + 1D centre-row profile |
+| **Simple CSV** | Header contains `angle` but no temp/time | 3 cols: `angle_deg`, `mag_dB`, `phase_deg` | 1D angular sweep arrays |
+| **Extended CSV** | Header contains `angle` + `temp` or `elapsed` | 5 cols: angle, mag, phase, temperature, elapsed_time | 1D sweep + thermal metadata for LightGBM |
+
+The ingester uses flexible column-name aliasing (e.g., `angle_deg`, `angle`, `motor_angle_deg`, `theta`, `phi` all map to the angle column), making it robust to different lab export formats.
+
+All three formats are normalised into an `IngestedData` dataclass containing:
+- Standardised Pandas DataFrame
+- 1D arrays: `angles`, `magnitudes`, `phases`
+- 2D arrays (planar only): `Ex_2D`, `Ey_2D`, `x_mm`, `y_mm`
+- Metadata flags: `has_temperature`, `has_elapsed_time`
+
+### 2. Hybrid Training Approach
 
 Instead of training on purely synthetic cosine patterns (academically weak) or requiring thousands of CST simulations (computationally prohibitive), this project uses a **hybrid approach**:
 
@@ -373,7 +542,7 @@ Instead of training on purely synthetic cosine patterns (academically weak) or r
 
 This gives the model 32,000 effectively unique training samples (500 epochs x 64 batch size) while preserving the real electromagnetic physics.
 
-### 2. Autoencoder Architecture
+### 3. Autoencoder Architecture
 
 ```
 Input (1 x 360)
@@ -411,7 +580,7 @@ The **bottleneck** (16 channels x 45 spatial points = 720 values) forces the net
 - Epochs: 500
 - Device: CPU (~20s) or CUDA GPU (~5s)
 
-### 3. Adaptive Anomaly Detection
+### 4. Adaptive Anomaly Detection
 
 Rather than a brittle fixed threshold (e.g., 5 dB), the system computes an **adaptive threshold** from the reconstruction error distribution:
 
@@ -424,7 +593,7 @@ This is equivalent to flagging any point whose reconstruction error falls outsid
 - Different SNR levels in various anechoic chambers
 - Different frequency bands
 
-### 4. Smart Interpolation
+### 5. Smart Interpolation
 
 Unlike the old approach that interpolates *all* data uniformly, the smart interpolation:
 
@@ -435,7 +604,7 @@ Unlike the old approach that interpolates *all* data uniformly, the smart interp
 
 This preserves all valid measurement data and fixes only what is actually corrupted.
 
-### 5. LightGBM Phase Drift Calibration
+### 6. LightGBM Phase Drift Calibration
 
 While the autoencoder handles sharp, localised anomalies (motor jitter, cable reflections), it cannot correct **slow, continuous thermal drift** that accumulates over long scans. The LightGBM calibration module addresses this complementary problem.
 
@@ -475,6 +644,24 @@ where `T` is the instantaneous chamber temperature (deg C), `T_ref` is the start
 | 5-Fold Mean R2 | 0.999995 |
 | Phase error reduction | 71.2% |
 
+### 7. Pipeline Orchestration
+
+The `MetrologyPipeline` class (`main.py`) chains all four processing stages with:
+
+- **Strict shape validation** between stages (e.g., ensuring the anomaly detector's output length matches the calibrator's expected input)
+- **Automatic format routing** — planar data goes to the PWS 2D-FFT transform; 1D angular sweeps go to the circular CME+Hankel transform
+- **Progress callbacks** — the `progress_cb(stage, fraction, message)` function is called at key points, driving the Streamlit progress bar
+- **Graceful fallbacks** — if no pre-trained weights exist, the autoencoder trains on the fly; if no temperature metadata exists, the calibrator runs a synthetic demo
+- **Unified results dict** — all outputs (metrics, nearfield data, anomaly results, calibration results, farfield arrays, stage list, timings) are returned in a single dictionary
+
+```
+Pipeline Stages:
+  1. INGESTION    →  VNADataIngester.parse()
+  2. ANOMALY      →  NearFieldAutoencoder + detect_anomalies() + smart_interpolate()
+  3. CALIBRATION  →  CalibrationPipeline + calibrate_sweep()
+  4. TRANSFORM    →  PlanarNFFFTransformer or CircularNFFFTransformer
+```
+
 ---
 
 ## Results
@@ -492,7 +679,7 @@ where `T` is the instantaneous chamber temperature (deg C), `T_ref` is the start
 The pipeline generates a 4-panel diagnostic plot (`nf_anomaly_results.png`):
 
 | Panel | Content |
-|-------|---------|
+|-------|---------| 
 | **Top-left** | Training loss curve (log scale) — shows convergence from ~2.1 to ~0.002 |
 | **Top-right** | Raw sweep with detected anomalies (red dots) and ground-truth (green circles) |
 | **Bottom-left** | Per-point reconstruction error with adaptive threshold line |
@@ -512,7 +699,7 @@ The pipeline generates a 4-panel diagnostic plot (`nf_anomaly_results.png`):
 The pipeline generates a 2-panel diagnostic plot (`calibration_diagnostic.png`):
 
 | Panel | Content |
-|-------|---------|
+|-------|---------| 
 | **Left** | Thermal drift landscape — colour-mapped scatter of drift vs temperature and elapsed time |
 | **Right** | Phase comparison — true (green), corrupted (red), LightGBM-calibrated (blue dashed) |
 
@@ -543,6 +730,18 @@ angle_deg,mag_dB,phase_deg
 ...
 359,-43.1,11.9
 ```
+
+### Extended VNA CSV (with temperature/time metadata)
+
+```csv
+motor_angle_deg,raw_mag_dB,raw_phase_deg,ambient_temp_c,elapsed_time_min
+0,-42.3,12.5,22.1,0.0
+1,-41.8,13.1,22.2,0.1
+...
+359,-43.1,11.9,25.8,239.4
+```
+
+> **Auto-detection:** The `VNADataIngester` class automatically detects which of the three formats above is provided, so you never need to specify the format manually.
 
 ### Cleaned Output (`cleaned_sweep.csv`)
 
@@ -608,6 +807,29 @@ usage: nf_ff_circular.py [-h] [--input INPUT] [--freq FREQ] [--r-probe R_PROBE] 
 
 The recommended end-to-end workflow for processing real antenna measurements:
 
+### Option A: GUI Dashboard (Recommended)
+
+```
+Step 1:  Launch the dashboard
+             streamlit run app.py
+
+Step 2:  Upload your raw VNA/CST measurement file
+             (or enable demo mode for Simulated_NF_Data.txt)
+
+Step 3:  Adjust parameters in the sidebar
+             (frequency, step size, probe radius, FFT size)
+
+Step 4:  Click "🚀 Run Full Pipeline"
+             → Watch the progress bar through all 4 stages
+
+Step 5:  Explore interactive visualisations
+             → 3D radiation surface / polar plots
+             → Anomaly detection diagnostics
+             → Stage-by-stage timing and metrics
+```
+
+### Option B: CLI Pipeline
+
 ```
 Step 1:  Measure in the anechoic chamber
              |  (record angle, mag, phase, temperature, elapsed time)
@@ -641,7 +863,21 @@ Step 6:  Run Python NF-FF scripts (or legacy MATLAB scripts)
 Step 7:  Far-field radiation pattern
 ```
 
-> **Tip:** For best results, run the anomaly detection first (fixes sharp spikes), then run the calibration on the cleaned output (corrects slow drift). The two modules address complementary types of measurement corruption.
+### Option C: Programmatic Pipeline
+
+```python
+from main import MetrologyPipeline, PipelineConfig
+
+pipe = MetrologyPipeline(PipelineConfig(freq_ghz=10.0))
+results = pipe.run_full_sweep("your_measurement.csv")
+
+# Access all results
+ff_pattern = results["farfield"]
+anomalies  = results["anomaly"]
+metrics    = results["metrics"]
+```
+
+> **Tip:** For best results, run the anomaly detection first (fixes sharp spikes), then run the calibration on the cleaned output (corrects slow drift). The two modules address complementary types of measurement corruption. The GUI dashboard and `main.py` pipeline handle this ordering automatically.
 
 ---
 
@@ -701,6 +937,10 @@ LightGBM is used for phase drift correction because:
 | `UnicodeEncodeError: 'charmap' codec` | Set environment variable: `$env:PYTHONIOENCODING = "utf-8"` before running |
 | `ModuleNotFoundError: No module named 'torch'` | Run `pip install -r requirements.txt` |
 | `ModuleNotFoundError: No module named 'lightgbm'` | Run `pip install lightgbm scikit-learn` |
+| `ModuleNotFoundError: No module named 'streamlit'` | Run `pip install streamlit plotly` |
+| `ModuleNotFoundError: No module named 'plotly'` | Run `pip install plotly>=5.18.0` |
+| Streamlit dashboard won't launch | Ensure `streamlit` is installed and run `streamlit run app.py` (not `python app.py`) |
+| Dashboard shows "Pipeline Error" | Check the error message — usually a missing data file or incompatible input format |
 | High training loss (> 100) | Data normalisation may be missing — ensure the augmentation pipeline normalises to [-1, 1] |
 | 0 anomalies detected | Check that the threshold isn't too high; try lowering the sigma multiplier from 3.0 to 2.5 |
 | MATLAB `readmatrix` error | Ensure `Simulated_NF_Data.txt` uses whitespace delimiters and has 2 header lines |
@@ -713,11 +953,13 @@ LightGBM is used for phase drift correction because:
 ## Future Work
 
 - [x] ~~**LightGBM calibration predictor**~~ — Completed! Predicts and corrects thermal phase drift using gradient-boosted regression
+- [x] ~~**Combined pipeline**~~ — Completed! `main.py` chains autoencoder anomaly detection and LightGBM calibration into a single end-to-end `MetrologyPipeline` class
+- [x] ~~**Interactive GUI**~~ — Completed! Streamlit dashboard (`app.py`) with Plotly 3D surfaces, polar plots, U-V heatmaps, and real-time pipeline progress tracking
+- [x] ~~**Smart data ingestion**~~ — Completed! Auto-detecting parser (`ingestion.py`) handles CST, simple CSV, and extended VNA CSV formats
 - [ ] **2D anomaly detection** — Extend the autoencoder to 2D convolutional for planar near-field grids
 - [ ] **Real-time inference** — Integrate with the measurement controller for live anomaly flagging during acquisition
 - [ ] **Transfer learning** — Fine-tune the pretrained model on a small set of real measurements from a specific antenna
 - [ ] **ONNX export** — Convert the PyTorch model to ONNX for deployment in MATLAB via the Deep Learning Toolbox
-- [ ] **Combined pipeline** — Chain autoencoder anomaly detection and LightGBM calibration into a single end-to-end command
 - [ ] **Real drift data training** — Replace synthetic drift data with logged temperature/phase data from actual chamber scans
 
 ---
@@ -729,4 +971,3 @@ This project is for academic and research use. Please cite appropriately if used
 ---
 
 *Built for near-field antenna measurement research at 10 GHz.*
-
